@@ -12,7 +12,7 @@ let history = [];
 let startTime, timerInterval;
 let isSolving = false;
 
-// Standard Knight Moves
+
 const dr = [2, 1, -1, -2, -2, -1, 1, 2];
 const dc = [1, 2, 2, 1, -1, -2, -2, -1];
 
@@ -97,11 +97,9 @@ function undoMove() {
   scoreElement.innerText = visitedCount;
 }
 
-// --- Backtracking Logic ---
 async function solveKT(r, c, movei) {
   if (movei === 64) return true;
 
-  // Using Warnsdorff's rule to keep the backtracking efficient
   let candidates = [];
   for (let i = 0; i < 8; i++) {
     let nr = r + dr[i],
@@ -127,7 +125,7 @@ async function solveKT(r, c, movei) {
 
   for (let cand of candidates) {
     makeMove(cand.nr, cand.nc);
-    await new Promise((res) => setTimeout(res, 50)); // Slow down for visualization
+    await new Promise((res) => setTimeout(res, 50)); 
 
     if (await solveKT(cand.nr, cand.nc, movei + 1)) return true;
 
@@ -146,7 +144,7 @@ async function runBacktracking() {
   undoBtn.disabled = true;
 
   startTimer();
-  makeMove(0, 0); // Start from top-left
+  makeMove(0, 0); 
 
   if (!(await solveKT(0, 0, 1))) {
     showMessage("No solution found!");
