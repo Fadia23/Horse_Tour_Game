@@ -1,105 +1,198 @@
 const boardElement = document.getElementById("board");
 const scoreElement = document.getElementById("score");
+const timerElement = document.getElementById("timer");
 const messageElement = document.getElementById("message");
+const solveBtn = document.getElementById("solveBtn");
+const undoBtn = document.getElementById("undoBtn");
 
-let currentPos = null; // سيخزن [row, col]
+let currentPos = null;
 let visitedCount = 0;
 let visitedBoard = Array.from({ length: 8 }, () => Array(8).fill(false));
+let history = [];
+let startTime, timerInterval;
+let isSolving = false;
 
-// إنشاء الرقعة
-function createBoard() {
+// Standard Knight Moves
+const dr = [2, 1, -1, -2, -2, -1, 1, 2];
+const dc = [1, 2, 2, 1, -1, -2, -2, -1];
+
+function initBoard() {
   boardElement.innerHTML = "";
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const cell = document.createElement("div");
       cell.className = `cell ${(r + c) % 2 === 0 ? "white" : "black"}`;
-      cell.dataset.row = r;
-      cell.dataset.col = c;
-      cell.addEventListener("click", () => handleMove(r, c));
+      cell.onclick = () => !isSolving && handleMove(r, c);
       boardElement.appendChild(cell);
     }
   }
 }
 
-// التحقق من قانونية حركة الحصان (شكل L)
-function isValidKnightMove(r1, c1, r2, c2) {
-  const dr = Math.abs(r1 - r2);
-  const dc = Math.abs(c1 - c2);
-  return (dr === 2 && dc === 1) || (dr === 1 && dc === 2);
-}
-
-// دالة معالجة الحركة مع فصل الأخطاء
 function handleMove(r, c) {
-  // الحركة الأولى مسموحة دائماً لبدء اللعبة
   if (currentPos === null) {
+    startTimer();
     makeMove(r, c);
     return;
   }
 
-  // 1. التحقق إذا كان المربع مزاراً مسبقاً
   if (visitedBoard[r][c]) {
-    showMessage("عذراً.. هذا المربع مزار مسبقاً!");
+    showMessage("Already visited!");
     return;
   }
 
-  // 2. التحقق إذا كانت الحركة غير قانونية (ليست شكل L)
-  if (!isValidKnightMove(currentPos[0], currentPos[1], r, c)) {
-    showMessage("حركة خاطئة! يجب أن يتحرك الحصان على شكل حرف L.");
-    return;
+  const deltaR = Math.abs(currentPos[0] - r);
+  const deltaC = Math.abs(currentPos[1] - c);
+  if ((deltaR === 2 && deltaC === 1) || (deltaR === 1 && deltaC === 2)) {
+    makeMove(r, c);
+  } else {
+    showMessage("Invalid Horse Move!");
   }
-
-  // إذا كانت الحركة سليمة
-  makeMove(r, c);
-}
-
-// دالة عرض الرسائل المؤقتة
-function showMessage(text) {
-  messageElement.innerText = text;
-  messageElement.style.color = "#ff4d4d"; // لون أحمر للتنبيه
-  setTimeout(() => {
-    messageElement.innerText = "";
-  }, 2500);
 }
 
 function makeMove(r, c) {
-  // إزالة تمييز الحصان من الموقع القديم
   if (currentPos) {
-    const oldCell = getCellElement(currentPos[0], currentPos[1]);
+    const oldCell = boardElement.children[currentPos[0] * 8 + currentPos[1]];
     oldCell.classList.remove("current");
     oldCell.classList.add("visited");
-    oldCell.innerText = visitedCount; // وضع رقم الخطوة في المربع السابق
+    oldCell.innerText = visitedCount;
   }
 
-  // تحديث البيانات للموقع الجديد
+  history.push({ r, c });
   currentPos = [r, c];
   visitedBoard[r][c] = true;
   visitedCount++;
 
-  const newCell = getCellElement(r, c);
-  newCell.classList.add("current");
-  newCell.innerText = "♞"; // وضع رمز الحصان في الموقع الحالي
-
+  const cell = boardElement.children[r * 8 + c];
+  cell.classList.add("current");
+  cell.innerText = "♞";
   scoreElement.innerText = visitedCount;
 
-  // حالة الفوز
   if (visitedCount === 64) {
-    messageElement.innerText = "تهانينا! لقد حققت جولة كاملة بنجاح!";
-    messageElement.style.color = "#2ecc71";
+    stopTimer();
+    showMessage("Success! Tour Completed!", "#2ecc71");
   }
 }
 
-function getCellElement(r, c) {
-  return boardElement.children[r * 8 + c];
+function undoMove() {
+  if (history.length <= 1) {
+    if (history.length === 1) resetGame();
+    return;
+  }
+
+  const lastMove = history.pop();
+  visitedBoard[lastMove.r][lastMove.c] = false;
+  visitedCount--;
+
+  const cell = boardElement.children[lastMove.r * 8 + lastMove.c];
+  cell.classList.remove("current", "visited");
+  cell.innerText = "";
+
+  const prevMove = history[history.length - 1];
+  currentPos = [prevMove.r, prevMove.c];
+  const prevCell = boardElement.children[prevMove.r * 8 + prevMove.c];
+  prevCell.classList.remove("visited");
+  prevCell.classList.add("current");
+  prevCell.innerText = "♞";
+
+  scoreElement.innerText = visitedCount;
+}
+
+// --- Backtracking Logic ---
+async function solveKT(r, c, movei) {
+  if (movei === 64) return true;
+
+  // Using Warnsdorff's rule to keep the backtracking efficient
+  let candidates = [];
+  for (let i = 0; i < 8; i++) {
+    let nr = r + dr[i],
+      nc = c + dc[i];
+    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && !visitedBoard[nr][nc]) {
+      let deg = 0;
+      for (let j = 0; j < 8; j++) {
+        let nnr = nr + dr[j],
+          nnc = nc + dc[j];
+        if (
+          nnr >= 0 &&
+          nnr < 8 &&
+          nnc >= 0 &&
+          nnc < 8 &&
+          !visitedBoard[nnr][nnc]
+        )
+          deg++;
+      }
+      candidates.push({ nr, nc, deg });
+    }
+  }
+  candidates.sort((a, b) => a.deg - b.deg);
+
+  for (let cand of candidates) {
+    makeMove(cand.nr, cand.nc);
+    await new Promise((res) => setTimeout(res, 50)); // Slow down for visualization
+
+    if (await solveKT(cand.nr, cand.nc, movei + 1)) return true;
+
+    // Backtrack
+    undoMove();
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  return false;
+}
+
+async function runBacktracking() {
+  if (isSolving) return;
+  resetGame();
+  isSolving = true;
+  solveBtn.disabled = true;
+  undoBtn.disabled = true;
+
+  startTimer();
+  makeMove(0, 0); // Start from top-left
+
+  if (!(await solveKT(0, 0, 1))) {
+    showMessage("No solution found!");
+  }
+
+  isSolving = false;
+  solveBtn.disabled = false;
+  undoBtn.disabled = false;
+}
+
+function showMessage(txt, color = "#f1c40f") {
+  messageElement.innerText = txt;
+  messageElement.style.color = color;
+  setTimeout(() => (messageElement.innerText = ""), 2500);
+}
+
+function startTimer() {
+  if (timerInterval) return;
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const diff = Date.now() - startTime;
+    const m = Math.floor(diff / 60000)
+      .toString()
+      .padStart(2, "0");
+    const s = Math.floor((diff % 60000) / 1000)
+      .toString()
+      .padStart(2, "0");
+    timerElement.innerText = `${m}:${s}`;
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
 }
 
 function resetGame() {
+  stopTimer();
   currentPos = null;
   visitedCount = 0;
+  history = [];
   visitedBoard = Array.from({ length: 8 }, () => Array(8).fill(false));
-  messageElement.innerText = "";
-  createBoard();
+  timerElement.innerText = "00:00";
   scoreElement.innerText = "0";
+  messageElement.innerText = "";
+  initBoard();
 }
 
-// تشغيل اللعبة
-createBoard();
+initBoard();
